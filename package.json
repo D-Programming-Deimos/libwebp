@@ -1,0 +1,12 @@
+{
+	"name": "libwebp",
+	"description": "D bindings for WebP",
+	"homepage": "https://github.com/lionello/libwebp",
+	"authors": [
+		"Lionello Lunesu"
+	],
+	"libs": ["webp"],
+	"targetType": "sourceLibrary",
+	"dependencies": {
+	}
+}
