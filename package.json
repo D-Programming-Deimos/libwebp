@@ -1,6 +1,7 @@
 {
 	"name": "libwebp",
 	"description": "D bindings for WebP",
+	"license": "BSD 3-clause",
 	"homepage": "https://github.com/lionello/libwebp",
 	"authors": [
 		"Lionello Lunesu"
