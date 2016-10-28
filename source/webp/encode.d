@@ -152,16 +152,6 @@ int WebPConfigPreset(WebPConfig* config,
                                 WEBP_ENCODER_ABI_VERSION);
 }
 
-if (WEBP_ENCODER_ABI_VERSION > 0x0202)
-// Activate the lossless compression mode with the desired efficiency level
-// between 0 (fastest, lowest compression) and 9 (slower, best compression).
-// A good default level is '6', providing a fair tradeoff between compression
-// speed and final compressed size.
-// This function will overwrite several fields from config: 'method', 'quality'
-// and 'lossless'. Returns false in case of parameter error.
-  int WebPConfigLosslessPreset(WebPConfig* config, int level);
-}
-
 // Returns true if 'config' is non-NULL and all configuration parameters are
 // within their valid ranges.
 int WebPValidateConfig(in WebPConfig* config);
@@ -216,19 +206,13 @@ struct WebPMemoryWriter {
 // The following must be called first before any use.
 void WebPMemoryWriterInit(WebPMemoryWriter* writer);
 
-if (WEBP_ENCODER_ABI_VERSION > 0x0203) {
-// The following must be called to deallocate writer->mem memory. The 'writer'
-// object itself is not deallocated.
-  void WebPMemoryWriterClear(WebPMemoryWriter* writer);
-}
-
 // The custom writer to be used with WebPMemoryWriter as custom_ptr. Upon
 // completion, writer.mem and writer.size will hold the coded data.
-if (WEBP_ENCODER_ABI_VERSION > 0x0203)
+//if (WEBP_ENCODER_ABI_VERSION > 0x0203)
 // writer.mem must be freed by calling WebPMemoryWriterClear.
-} else {
+//} else {
 // writer.mem must be freed by calling 'free(writer.mem)'.
-}
+//}
 int WebPMemoryWrite(in ubyte* data, size_t data_size,
                                  in WebPPicture* picture);
 
@@ -324,8 +308,6 @@ struct WebPPicture {
   // Unused for now: original samples (for non-YUV420 modes)
   ubyte* pad4, pad5;
   uint[8] pad6;
-
-  uint[7] pad4;            // padding for later use
 
   // PRIVATE FIELDS
   ////////////////////
@@ -451,15 +433,6 @@ int WebPPictureARGBToYUVA(WebPPicture* picture,
 // for photographic picture.
 int WebPPictureARGBToYUVADithered(
     WebPPicture* picture, WebPEncCSP colorspace, float dithering);
-
-if (WEBP_ENCODER_ABI_VERSION > 0x0204) {
-// Performs 'smart' RGBA->YUVA420 downsampling and colorspace conversion.
-// Downsampling is handled with extra care in case of color clipping. This
-// method is roughly 2x slower than WebPPictureARGBToYUVA() but produces better
-// YUV representation.
-// Returns false in case of error.
-  int WebPPictureSmartARGBToYUVA(WebPPicture* picture);
-}
 
 // Converts picture->yuv to picture->argb and sets picture->use_argb to true.
 // The input format must be YUV_420 or YUV_420A.
