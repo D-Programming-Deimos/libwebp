@@ -16,7 +16,7 @@ module webp.encode;
 
 extern (C) {
 
-enum WEBP_ENCODER_ABI_VERSION = 0x0201;    // MAJOR(8b) + MINOR(8b)
+enum WEBP_ENCODER_ABI_VERSION = 0x0202;    // MAJOR(8b) + MINOR(8b)
 
 // Return the encoder's version number, packed in hexadecimal using 8bits for
 // each of major/minor/revision. E.g: v2.5.7 is 0x020507.
@@ -102,7 +102,8 @@ struct WebPConfig {
 
   int show_compressed;    // if true, export the compressed picture back.
                           // In-loop filtering is not applied.
-  int preprocessing;      // preprocessing filter (0=none, 1=segment-smooth)
+  int preprocessing;      // preprocessing filter:
+                          // 0=none, 1=segment-smooth, 2=pseudo-random dithering
   int partitions;         // log2(number of token partitions) in [0..3]. Default
                           // is set to 0 for easier progressive decoding.
   int partition_limit;    // quality degradation allowed to fit the 512k limit
@@ -207,7 +208,11 @@ void WebPMemoryWriterInit(WebPMemoryWriter* writer);
 
 // The custom writer to be used with WebPMemoryWriter as custom_ptr. Upon
 // completion, writer.mem and writer.size will hold the coded data.
-// writer.mem must be freed using the call 'free(writer.mem)'.
+//if (WEBP_ENCODER_ABI_VERSION > 0x0203)
+// writer.mem must be freed by calling WebPMemoryWriterClear.
+//} else {
+// writer.mem must be freed by calling 'free(writer.mem)'.
+//}
 int WebPMemoryWrite(in ubyte* data, size_t data_size,
                                  in WebPPicture* picture);
 
@@ -219,16 +224,9 @@ alias int function(int percent, in WebPPicture* picture) WebPProgressHook;
 // Color spaces.
 enum WebPEncCSP {
   // chroma sampling
-  WEBP_YUV420 = 0,   // 4:2:0
-  WEBP_YUV422 = 1,   // 4:2:2
-  WEBP_YUV444 = 2,   // 4:4:4
-  WEBP_YUV400 = 3,   // grayscale
-  WEBP_CSP_UV_MASK = 3,   // bit-mask to get the UV sampling factors
-  // alpha channel variants
-  WEBP_YUV420A = 4,
-  WEBP_YUV422A = 5,
-  WEBP_YUV444A = 6,
-  WEBP_YUV400A = 7,   // grayscale + alpha
+  WEBP_YUV420  = 0,        // 4:2:0
+  WEBP_YUV420A = 4,        // alpha channel variant
+  WEBP_CSP_UV_MASK = 3,    // bit-mask to get the UV sampling factors
   WEBP_CSP_ALPHA_BIT = 4   // bit that is set if alpha is present
 }
 
@@ -308,16 +306,14 @@ struct WebPPicture {
   uint[3] pad3;           // padding for later use
 
   // Unused for now: original samples (for non-YUV420 modes)
-  ubyte* u0, v0;
-  int uv0_stride;
-
-  uint[7] pad4;            // padding for later use
+  ubyte* pad4, pad5;
+  uint[8] pad6;
 
   // PRIVATE FIELDS
   ////////////////////
   void* memory_;          // row chunk of memory for yuva planes
   void* memory_argb_;     // and for argb too.
-  void*[2] pad5;          // padding for later use
+  void*[2] pad7;          // padding for later use
 }
 
 // Internal, version-checked, entry point
@@ -393,7 +389,9 @@ int WebPPictureView(in WebPPicture* src,
 int WebPPictureIsView(in WebPPicture* picture);
 
 // Rescale a picture to new dimension width x height.
-// Now gamma correction is applied.
+// If either 'width' or 'height' (but not both) is 0 the corresponding
+// dimension will be calculated preserving the aspect ratio.
+// No gamma correction is applied.
 // Returns false in case of error (invalid parameter or insufficient memory).
 int WebPPictureRescale(WebPPicture* pic, int width, int height);
 
@@ -420,13 +418,21 @@ int WebPPictureImportBGRA(
 int WebPPictureImportBGRX(
     WebPPicture* picture, in ubyte* bgrx, int bgrx_stride);
 
-// Converts picture->argb data to the YUVA format specified by 'colorspace'.
+// Converts picture->argb data to the YUV420A format. The 'colorspace'
+// parameter is deprecated and should be equal to WEBP_YUV420.
 // Upon return, picture->use_argb is set to false. The presence of real
 // non-opaque transparent values is detected, and 'colorspace' will be
 // adjusted accordingly. Note that this method is lossy.
 // Returns false in case of error.
 int WebPPictureARGBToYUVA(WebPPicture* picture,
                                        WebPEncCSP colorspace);
+
+// Same as WebPPictureARGBToYUVA(), but the conversion is done using
+// pseudo-random dithering with a strength 'dithering' between
+// 0.0 (no dithering) and 1.0 (maximum dithering). This is useful
+// for photographic picture.
+int WebPPictureARGBToYUVADithered(
+    WebPPicture* picture, WebPEncCSP colorspace, float dithering);
 
 // Converts picture->yuv to picture->argb and sets picture->use_argb to true.
 // The input format must be YUV_420 or YUV_420A.
@@ -436,15 +442,20 @@ int WebPPictureARGBToYUVA(WebPPicture* picture,
 // Returns false in case of error.
 int WebPPictureYUVAToARGB(WebPPicture* picture);
 
-// Helper function: given a width x height plane of YUV(A) samples
-// (with stride 'stride'), clean-up the YUV samples under fully transparent
-// area, to help compressibility (no guarantee, though).
+// Helper function: given a width x height plane of RGBA or YUV(A) samples
+// clean-up the YUV or RGB samples under fully transparent area, to help
+// compressibility (no guarantee, though).
 void WebPCleanupTransparentArea(WebPPicture* picture);
 
 // Scan the picture 'picture' for the presence of non fully opaque alpha values.
 // Returns true in such case. Otherwise returns false (indicating that the
 // alpha plane can be ignored altogether e.g.).
 int WebPPictureHasTransparency(in WebPPicture* picture);
+
+// Remove the transparency information (if present) by blending the color with
+// the background color 'background_rgb' (specified as 24bit RGB triplet).
+// After this call, all alpha values are reset to 0xff.
+void WebPBlendAlpha(WebPPicture* pic, uint background_rgb);
 
 //------------------------------------------------------------------------------
 // Main call
